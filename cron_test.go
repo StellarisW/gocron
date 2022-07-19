@@ -32,12 +32,13 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 	wg.Add(1)
 
 	cron := New()
-	cron.Start()
-	cron.Stop()
 	err := cron.AddFunc("* * * * * ?", func() { wg.Done() })
 	if err != nil {
 		fmt.Println(err)
 	}
+	cron.Start()
+	time.Sleep(time.Minute * 60)
+	cron.Stop()
 
 	select {
 	case <-time.After(OneSecond):
