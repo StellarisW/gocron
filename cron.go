@@ -1,17 +1,21 @@
 package gocron
 
 import (
-	"sort"
+	"github.com/emirpasic/gods/utils"
 	"time"
+
+	"github.com/emirpasic/gods/queues/priorityqueue"
 )
 
 type Cron struct {
-	entries []*Entry
+	entries *priorityqueue.Queue
 	add     chan *Entry
+	remove  chan EntryID
 	stop    chan struct{}
 	running bool // 引擎运行标志
 }
 
+type EntryID int
 type Entry struct {
 	*Schedule
 	Next time.Time
@@ -19,30 +23,22 @@ type Entry struct {
 	Job  Job
 }
 
-type byTime []*Entry
-
-// sort的自定义函数
-
-func (s byTime) Len() int      { return len(s) }
-func (s byTime) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
-func (s byTime) Less(i, j int) bool {
-	if s[i].Next.IsZero() {
-		return false
-	}
-	if s[j].Next.IsZero() {
-		return true
-	}
-	return s[i].Next.Before(s[j].Next)
-}
-
 // Job 工作函数
 type Job interface {
 	Run()
 }
 
+func byTime(a, b interface{}) int {
+	return utils.Int64Comparator(
+		a.(*Entry).Next.Unix(),
+		b.(*Entry).Next.Unix(),
+	)
+}
+
 func New() *Cron {
+	queue := priorityqueue.NewWith(byTime)
 	return &Cron{
-		entries: nil,
+		entries: queue,
 		add:     make(chan *Entry),
 		stop:    make(chan struct{}),
 		running: false,
@@ -70,7 +66,8 @@ func (c *Cron) AddJob(pattern string, cmd Job) (err error) {
 	}
 
 	if !c.running { // 引擎未运行，添加到工作池里面
-		c.entries = append(c.entries, entry)
+		entry.Next = time.Now().AddDate(5, 0, 0)
+		c.entries.Enqueue(entry)
 		return
 	}
 	c.add <- entry // 引擎运行，直接添加到运行队列
@@ -89,35 +86,41 @@ func (c *Cron) Stop() {
 
 func (c *Cron) run() {
 	now := time.Now().Local()
-	for _, entry := range c.entries {
+	size := c.entries.Size()
+	for i := 1; i <= size; i++ {
+		v, _ := c.entries.Dequeue()
+		entry := v.(*Entry)
 		entry.Next = entry.Schedule.Next(now)
+		c.entries.Enqueue(entry)
 	}
 	for {
-		// 决定下一个运行的入口函数
-		sort.Sort(byTime(c.entries)) //TODO: 可以写个优先队列来调度,暂时用排序来代替
 
 		var effective time.Time
-		if len(c.entries) == 0 || c.entries[0].Next.IsZero() {
+		top, _ := c.entries.Peek()
+		if c.entries.Size() == 0 || top.(*Entry).Next.IsZero() {
 			// 如果工作池里没有入口函数,引擎直接休眠,但还是可以接受新的请求
 			effective = now.AddDate(10, 0, 0)
 		} else {
-			effective = c.entries[0].Next
+			effective = top.(*Entry).Next
 		}
 
 		select {
 		case now = <-time.After(effective.Sub(now)):
-			for _, e := range c.entries {
-				if e.Next != effective {
+			for {
+				v, _ := c.entries.Dequeue()
+				entry := v.(*Entry)
+				if entry.Next != effective {
 					break
 				}
-				go e.Job.Run()
-				e.Prev = e.Next
-				e.Next = e.Schedule.Next(effective)
+				go entry.Job.Run()
+				entry.Prev = entry.Next
+				entry.Next = entry.Schedule.Next(effective)
+				c.entries.Enqueue(entry)
 			}
 
 		case newEntry := <-c.add:
-			c.entries = append(c.entries, newEntry)
 			newEntry.Next = newEntry.Schedule.Next(now)
+			c.entries.Enqueue(newEntry)
 
 		case <-c.stop:
 			return
