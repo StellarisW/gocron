@@ -32,7 +32,7 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 	wg.Add(1)
 
 	cron := New()
-	err := cron.AddFunc("* * * * * ?", func() { wg.Done() })
+	err := cron.AddFunc("*/5 * * * * ?", func() { wg.Done() })
 	if err != nil {
 		fmt.Println(err)
 	}
