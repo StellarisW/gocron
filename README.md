@@ -62,7 +62,3 @@ cron.Stop()
 - [ ] 解决时间延迟问题
 - [ ] 增加更方便的表达式
 - [ ] 增强性能: job调度用优先队列来实现
-
-# 📔 参考文献
-
-[cron](https://github.com/robfig/cron)
