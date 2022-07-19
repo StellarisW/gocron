@@ -1,10 +1,10 @@
 package gocron
 
 import (
-	"github.com/emirpasic/gods/utils"
 	"time"
 
 	"github.com/emirpasic/gods/queues/priorityqueue"
+	"github.com/emirpasic/gods/utils"
 )
 
 type Cron struct {
@@ -19,7 +19,6 @@ type EntryID int
 type Entry struct {
 	*Schedule
 	Next time.Time
-	Prev time.Time
 	Job  Job
 }
 
@@ -113,7 +112,6 @@ func (c *Cron) run() {
 					break
 				}
 				go entry.Job.Run()
-				entry.Prev = entry.Next
 				entry.Next = entry.Schedule.Next(effective)
 				c.entries.Enqueue(entry)
 			}
